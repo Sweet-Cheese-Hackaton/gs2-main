@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Центр-Инвест</title>
+    <style>
+       body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: url("{{ url_for('static', filename='images/Vector.svg') }}") no-repeat center top 10%;
+            background-size: 20% auto;
+            background-attachment: fixed;
+        }
+
+        h1 {
+            color: #333; /* Темно-серый текст */
+            margin: 20px;
+        }
+
+        #chat-box {
+            width: 100%;
+            max-width: 600px;
+            min-height: 100px; /* Минимальная высота чата */
+            max-height: 60vh; /* Максимальная высота, например 60% от высоты видимой части экрана */
+            margin-top: 200px; /* Отступ сверху, чтобы не перекрывать логотип */
+            background-color: #fff;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            overflow-y: auto; /* Включаем скроллинг */
+            padding: 20px; /* Внутренний отступ для сообщений */
+            box-sizing: border-box; /* Включаем border и padding в общую ширину и высоту */
+        }
+
+
+        .message {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            border-bottom: 1px solid #ececec;
+        }
+
+        .user-message {
+            justify-content: flex-end;
+            background-color: #008000; /* Зеленый фон сообщений пользователя */
+            color: white;
+            border-radius: 18px;
+            margin: 8px;
+            padding: 10px 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .bot-message {
+            justify-content: flex-start;
+            background-color: #e6ffed; /* Светло-зеленый фон сообщений бота */
+            color: #333;
+            border-radius: 18px;
+            margin: 8px;
+            padding: 10px 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #user-input {
+            width: calc(100% - 40px);
+            max-width: 560px;
+            min-height: 40px; /* Минимальная высота текстового поля */
+            max-height: 120px; /* Максимальная высота текстового поля */
+            overflow-y: auto; /* Позволит скроллить текст внутри поля */
+            margin: 10px 20px;
+            padding: 15px 20px;
+            border-radius: 20px;
+            border: 1px solid #d4d4d4;
+            outline: none;
+            resize: none; /* Отключает возможность изменения размера пользователем */
+        }
+
+
+        #send-btn, #speak-btn {
+            width: calc(100% - 40px);
+            max-width: 560px;
+            padding: 15px 20px;
+            margin: 10px 20px;
+            background-color: #008000; /* Зеленая кнопка */
+            color: white;
+            text-align: center;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        #send-btn:hover, #speak-btn:hover {
+            background-color: #006600; /* Темно-зеленая кнопка при наведении */
+        }
+
+        @media screen and (max-width: 600px) {
+            body {
+                background-size: 50% auto; /* Увеличиваем размер фона для мобильных экранов */
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+
+
+<div id="chat-box">
+    <!-- Сообщения чата будут здесь -->
+</div>
+
+<textarea id="user-input" placeholder="Напишите сообщение..."></textarea>
+<button id="speak-btn">Голосовой ввод</button>
+<button id="send-btn">Отправить</button>
+
+<script>
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const speakBtn = document.getElementById('speak-btn');
+    const sendBtn = document.getElementById('send-btn');
+
+    const recognition = new webkitSpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'ru-RU';
+
+    speakBtn.addEventListener('click', () => {
+        recognition.start();
+    });
+
+    recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        userInput.value = transcript;
+        await sendUserInput();
+    };
+
+    sendBtn.addEventListener('click', async () => {
+        await sendUserInput();
+    });
+
+    let lastMessageTime = 0; // Переменная для хранения времени последней отправки сообщения
+
+    async function sendUserInput() {
+        try {
+            // Получение текущего времени
+            const currentTime = Date.now();
+
+            // Проверка времени последней отправки сообщения
+            if (currentTime - lastMessageTime < 3000) {
+                throw new Error('Пожалуйста, подождите перед отправкой следующего сообщения.');
+            }
+
+            // Обновление времени последней отправки сообщения
+            lastMessageTime = currentTime;
+
+            const response = await fetch('/process_user_input', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ user_input: userInput.value })
+            });
+
+            if (!response.ok) {
+                throw new Error('Сервис временно недоступен. Попробуйте позже.');
+            }
+
+            const data = await response.json();
+            const botMessage = data.text;
+
+            if (data.audio) {
+                const audioBlob = await (await fetch(`data:audio/mpeg;base64,${data.audio}`)).blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                audio.addEventListener('ended', () => {
+                    addMessageToChat('Помощник', botMessage, 'bot-message');
+                });
+                audio.play();
+            } else {
+                addMessageToChat('Помощник', botMessage, 'bot-message');
+            }
+
+            addMessageToChat('Вы', userInput.value, 'user-message');
+            userInput.value = '';
+        } catch (error) {
+            addMessageToChat('System', error.message, 'system-message');
+        }
+    }
+
+    function addMessageToChat(sender, message, className) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${className}`;
+        messageDiv.textContent = `${sender}: ${message}`;
+        chatBox.appendChild(messageDiv);
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+    userInput.addEventListener('keypress', async (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        await sendUserInput();
+    }
+    navigator.mediaDevices.getUserMedia({ audio: { noiseSuppression: true } })
+.then(function(stream) {
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = function(e) {
+        // Здесь можно добавить дополнительную обработку аудио
+        const input = e.inputBuffer.getChannelData(0);
+        const output = e.outputBuffer.getChannelData(0);
+        for (let i = 0; i < input.length; i++) {
+            // Простое копирование входных данных в выходные
+            output[i] = input[i];
+        }
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+})
+.catch(function(err) {
+    console.error('Ошибка при получении доступа к микрофону:', err);
+});
+
+});
+
+</script>
+
+</body>
+</html>
